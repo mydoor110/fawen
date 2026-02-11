@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>连接测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-item {
+            margin: 10px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        .loading {
+            color: blue;
+        }
+        .result {
+            margin-top: 5px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1>公文文件号管理系统 - 连接测试</h1>
+    
+    <div id="tests">
+        <div class="test-item" id="test1">
+            <strong>1. 测试后端健康检查</strong>
+            <div class="result loading">正在测试...</div>
+        </div>
+        
+        <div class="test-item" id="test2">
+            <strong>2. 测试登录接口</strong>
+            <div class="result loading">等待测试...</div>
+        </div>
+        
+        <div class="test-item" id="test3">
+            <strong>3. 测试CORS跨域</strong>
+            <div class="result loading">等待测试...</div>
+        </div>
+    </div>
+    
+    <script>
+        async function testHealth() {
+            const resultDiv = document.querySelector('#test1 .result');
+            try {
+                const response = await fetch('http://192.168.1.99:5173/health');
+                const data = await response.json();
+                resultDiv.innerHTML = `<span class="success">✅ 成功</span><br>状态: ${data.status}`;
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ 失败</span><br>${error.message}`;
+            }
+        }
+        
+        async function testLogin() {
+            const resultDiv = document.querySelector('#test2 .result');
+            try {
+                const formData = new URLSearchParams();
+                formData.append('username', 'admin');
+                formData.append('password', 'admin123');
+                
+                const response = await fetch('http://192.168.1.99:5173/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: formData
+                });
+                const data = await response.json();
+                resultDiv.innerHTML = `<span class="success">✅ 成功</span><br>Token: ${data.access_token.substring(0, 50)}...`;
+                
+                localStorage.setItem('testToken', data.access_token);
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ 失败</span><br>${error.message}`;
+            }
+        }
+        
+        async function testCORS() {
+            const resultDiv = document.querySelector('#test3 .result');
+            try {
+                const response = await fetch('http://192.168.1.99:5173/api/auth/me', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + (localStorage.getItem('testToken') || '')
+                    }
+                });
+                
+                if (response.status === 401) {
+                    resultDiv.innerHTML = `<span class="success">✅ CORS正常</span><br>返回401（未登录）是正常的`;
+                } else {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `<span class="success">✅ CORS正常</span><br>${JSON.stringify(data)}`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ 失败</span><br>${error.message}`;
+            }
+        }
+        
+        // 依次执行测试
+        setTimeout(testHealth, 500);
+        setTimeout(testLogin, 1500);
+        setTimeout(testCORS, 2500);
+    </script>
+</body>
+</html>

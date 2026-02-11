@@ -1,0 +1,60 @@
+system:
+  name: "公文文件号管理系统"
+  version: "1.0.0"
+  environment: "development"
+
+number:
+  policies:
+    allow_edit_during_approval: false
+    require_reason: true
+    log_all_changes: true
+  pool:
+    auto_allocate: true
+    recycle_first: true
+  format:
+    prefix: "FW"
+    year_length: 4
+    number_length: 4
+    separator: "-"
+
+proofreading:
+  mode: "all_pass"
+  timeout_days: 7
+  can_skip: false
+  require_comment: true
+
+approval:
+  allow_skip_proofreading: false
+  timeout_days: 30
+  notify_on_assign: true
+  allow_reassign: false
+
+document:
+  max_size_mb: 50
+  allowed_formats: [".docx"]
+  storage_path: "storage/documents"
+  destroy_path: "storage/destroyed"
+
+audit:
+  log_all_actions: true
+  retain_days: 365
+  include_ip: true
+
+security:
+  jwt:
+    secret_key: "your-secret-key-change-in-production"
+    algorithm: "HS256"
+    expire_hours: 24
+  password:
+    min_length: 6
+    require_special_char: false
+  cors:
+    allowed_origins: ["http://192.168.1.99:8000", "http://localhost:8000", "http://192.168.1.99:5000", "http://localhost:5000"]
+
+database:
+  url: "postgresql://Fawen:naRGFtsT5shT2nCJ@192.168.1.99:5432/Fawen"
+  echo: false
+
+server:
+  host: "0.0.0.0"
+  port: 5000
