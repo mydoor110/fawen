@@ -73,3 +73,31 @@ export const forceUnlockDocument = (id, reason) => {
     params: { reason }
   })
 }
+
+// 获取文档锁定详情
+export const getDocumentLocks = (id) => {
+  return request({ url: `/documents/${id}/locks`, method: 'GET' })
+}
+
+// 重新提交（驳回后回到草稿）
+export const resubmitDocument = (id) => {
+  return request({ url: `/documents/${id}/resubmit`, method: 'POST' })
+}
+
+// 发起销毁申请
+export const requestDestroy = (id, reason) => {
+  return request({
+    url: `/destroy/documents/${id}/request`,
+    method: 'POST',
+    data: { reason }
+  })
+}
+
+// 审批销毁
+export const approveDestroy = (id, data) => {
+  return request({
+    url: `/destroy/documents/${id}/approve`,
+    method: 'POST',
+    data
+  })
+}

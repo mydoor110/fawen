@@ -32,7 +32,8 @@ def log_audit(
     action: str,
     resource_type: str,
     resource_id: str,
-    details: dict = None
+    details: dict = None,
+    ip_address: str = None
 ):
     """
     写入审计日志（强制，不受 config 开关控制）
@@ -42,7 +43,8 @@ def log_audit(
         action=action,
         resource_type=resource_type,
         resource_id=resource_id,
-        details=details or {}
+        details=details or {},
+        ip_address=ip_address
     )
     db.add(audit_log)
     logger.info(

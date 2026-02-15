@@ -49,18 +49,28 @@ def request_destroy(
     # 非管理员需要走审批
     if not has_any_role(current_user, ["SYSTEM_ADMIN"]):
         from app.models.approval import ApprovalTask, ApprovalNode, ApprovalFlow, ApprovalStatus
+        from app.services.document_service import _get_users_by_approval_role
 
         flow = db.query(ApprovalFlow).filter(ApprovalFlow.name == "文档销毁审批").first()
         if flow:
             node = db.query(ApprovalNode).filter(ApprovalNode.flow_id == flow.id).first()
             if node:
-                task = ApprovalTask(
-                    document_id=document_id,
-                    node_id=node.id,
-                    approver_id=node.approval_role_id,
-                    status=ApprovalStatus.PENDING
-                )
-                db.add(task)
+                # 解析审批角色为具体用户
+                approver_user_ids = _get_users_by_approval_role(db, node.approval_role_id)
+                if not approver_user_ids:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="销毁审批流程没有分配审批人员"
+                    )
+
+                for user_id in approver_user_ids:
+                    task = ApprovalTask(
+                        document_id=document_id,
+                        node_id=node.id,
+                        approver_id=user_id,
+                        status=ApprovalStatus.PENDING
+                    )
+                    db.add(task)
 
                 log_audit(db, current_user, AuditEvent.DOCUMENT_DESTROY,
                           "Document", str(document_id),
@@ -83,8 +93,8 @@ def approve_destroy_request(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """审批销毁申请"""
-    if not has_any_role(current_user, ["SYSTEM_ADMIN"]):
+    """审批销毁申请 — APPROVER 或 SYSTEM_ADMIN 可审批"""
+    if not has_any_role(current_user, ["SYSTEM_ADMIN", "APPROVER"]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权审批销毁")
 
     document = db.query(Document).filter(Document.id == document_id).first()
@@ -93,6 +103,7 @@ def approve_destroy_request(
 
     from app.models.approval import ApprovalTask, ApprovalStatus
 
+    # 查找分配给当前用户的待审批销毁任务
     task = db.query(ApprovalTask).filter(
         ApprovalTask.document_id == document_id,
         ApprovalTask.approver_id == current_user.id,

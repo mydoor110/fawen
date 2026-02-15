@@ -28,7 +28,7 @@ def get_my_approval_tasks(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取分配给自己的待审批任务"""
+    """获取分配给自己的待审批任务（approver_id 直接存储 User ID）"""
     tasks = db.query(ApprovalTask).filter(
         ApprovalTask.approver_id == current_user.id,
         ApprovalTask.status == ApprovalStatus.PENDING
@@ -339,21 +339,31 @@ def _advance_to_next_node(db: Session, current_node: ApprovalNode, document_id: 
     推进到下一个审批节点
     如果无下一节点 → 文档审批通过 → 自动分配文件号
     """
+    from app.services.document_service import _get_users_by_approval_role
+
     next_node = db.query(ApprovalNode).filter(
         ApprovalNode.flow_id == current_node.flow_id,
         ApprovalNode.sequence > current_node.sequence
     ).order_by(ApprovalNode.sequence).first()
 
     if next_node:
-        # 激活下一节点任务
-        new_task = ApprovalTask(
-            document_id=document_id,
-            node_id=next_node.id,
-            approver_id=next_node.approval_role_id,
-            status=ApprovalStatus.PENDING
-        )
-        db.add(new_task)
-        logger.info(f"文档 {document_id} 推进到审批节点 seq={next_node.sequence}")
+        # 激活下一节点任务 — 解析角色为具体用户
+        approver_user_ids = _get_users_by_approval_role(db, next_node.approval_role_id)
+        if not approver_user_ids:
+            logger.warning(f"审批节点 seq={next_node.sequence} 对应角色没有分配用户，跳过该节点")
+            # 如果该节点没有用户，递归跳过到下一个节点
+            _advance_to_next_node(db, next_node, document_id, user)
+            return
+
+        for user_id in approver_user_ids:
+            new_task = ApprovalTask(
+                document_id=document_id,
+                node_id=next_node.id,
+                approver_id=user_id,
+                status=ApprovalStatus.PENDING
+            )
+            db.add(new_task)
+        logger.info(f"文档 {document_id} 推进到审批节点 seq={next_node.sequence}，审批人 {len(approver_user_ids)} 名")
     else:
         # 最终节点通过 → 审批完成
         document = db.query(Document).filter(Document.id == document_id).first()

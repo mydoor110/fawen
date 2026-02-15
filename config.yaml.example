@@ -49,10 +49,10 @@ security:
     min_length: 6
     require_special_char: false
   cors:
-    allowed_origins: ["http://192.168.1.99:8000", "http://localhost:8000", "http://192.168.1.99:5000", "http://localhost:5000"]
+    allowed_origins: ["http://localhost:8000", "http://localhost:5000"]
 
 database:
-  url: "postgresql://Fawen:naRGFtsT5shT2nCJ@192.168.1.99:5432/Fawen"
+  url: "postgresql://user:password@localhost:5432/fawen"
   echo: false
 
 server:

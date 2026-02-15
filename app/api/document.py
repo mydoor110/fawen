@@ -141,15 +141,29 @@ async def upload_document_file(
     # 状态检查
     check_document_editable(document, field="content")
 
-    ext = file.filename.split('.')[-1] if '.' in file.filename else ''
+    # 提取扩展名并加上点号，与配置格式统一 (如 ".docx")
+    ext = ""
+    if file.filename and '.' in file.filename:
+        ext = '.' + file.filename.rsplit('.', 1)[-1].lower()
     if ext not in settings.document.allowed_formats:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的文件格式")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的文件格式，允许的格式: {', '.join(settings.document.allowed_formats)}"
+        )
 
-    file_path = f"{settings.document.storage_path}/{document_id}.{ext}"
+    # 读取文件内容并验证大小
+    content = await file.read()
+    max_size_bytes = settings.document.max_size_mb * 1024 * 1024
+    if len(content) > max_size_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"文件大小超过限制（最大 {settings.document.max_size_mb} MB）"
+        )
+
+    file_path = f"{settings.document.storage_path}/{document_id}{ext}"
     os.makedirs(settings.document.storage_path, exist_ok=True)
 
     with open(file_path, "wb") as buffer:
-        content = await file.read()
         buffer.write(content)
 
     document.file_path = file_path
@@ -287,3 +301,63 @@ def delete_document(
     db.delete(document)
     db.commit()
     return {"message": "文档已删除"}
+
+
+# ============================================================
+#  获取文档锁定详情
+# ============================================================
+@router.get("/{document_id}/locks")
+def get_document_locks(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文档不存在")
+
+    locks = db.query(DocumentLock).filter(
+        DocumentLock.document_id == document_id
+    ).all()
+
+    return [
+        {
+            "id": str(lock.id),
+            "document_id": str(lock.document_id),
+            "lock_type": lock.lock_type.value,
+            "locked_by": str(lock.locked_by),
+            "locked_at": lock.locked_at.isoformat() if lock.locked_at else None,
+            "reason": lock.reason,
+        }
+        for lock in locks
+    ]
+
+
+# ============================================================
+#  重新提交 — REJECTED → DRAFT (需求书状态机)
+# ============================================================
+@router.post("/{document_id}/resubmit")
+def resubmit_document(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文档不存在")
+
+    if document.creator_id != current_user.id and not is_system_admin(current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅文档创建者可重新提交")
+
+    if document.status != DocumentStatus.REJECTED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="仅已驳回状态的文档可重新提交"
+        )
+
+    # 状态回到草稿，解锁
+    document.status = DocumentStatus.DRAFT
+    unlock_document(db, document, current_user, "驳回后重新提交，回到草稿")
+    db.commit()
+
+    return {"message": "文档已回到草稿状态，可修改后重新提交"}

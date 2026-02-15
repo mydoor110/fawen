@@ -33,3 +33,12 @@ export const getRecyclePool = () => {
     method: 'GET'
   })
 }
+
+// 手动调整编号
+export const adjustNumber = (recordId, data) => {
+  return request({
+    url: `/numbers/records/${recordId}/adjust`,
+    method: 'POST',
+    data
+  })
+}

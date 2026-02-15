@@ -76,8 +76,8 @@ def adjust_number(
         if document and document.status == DocumentStatus.APPROVAL:
             # 检查配置是否允许
             allow_edit = False
-            if hasattr(settings, 'number_edit_policy'):
-                allow_edit = getattr(settings.number_edit_policy, 'allow_edit_during_approval', False)
+            if hasattr(settings, 'number') and hasattr(settings.number, 'policies'):
+                allow_edit = getattr(settings.number.policies, 'allow_edit_during_approval', False)
 
             if not allow_edit and not is_system_admin(current_user):
                 raise HTTPException(
@@ -124,10 +124,16 @@ def list_recycle_pool(
     records = db.query(RecyclePool).filter(RecyclePool.is_available == True).all()
     return records
 
+from pydantic import BaseModel
+
+
+class AllocateNumberRequest(BaseModel):
+    document_id: uuid.UUID
+
 
 @router.post("/allocate")
 def allocate_number(
-    document_id: uuid.UUID,
+    request: AllocateNumberRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -137,7 +143,7 @@ def allocate_number(
     """
     check_permission("number.allocate", current_user, db)
 
-    document = db.query(Document).filter(Document.id == document_id).first()
+    document = db.query(Document).filter(Document.id == request.document_id).first()
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文档不存在")
 

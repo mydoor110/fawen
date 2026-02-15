@@ -97,3 +97,38 @@ export const updateApprovalRole = (roleId, data) => {
 export const deleteApprovalRole = (roleId) => {
   return request({ url: `/admin/approval-roles/${roleId}`, method: 'DELETE' })
 }
+
+// ===== 审计日志 =====
+export const getAuditLogs = (params) => {
+  return request({ url: '/admin/audit-logs', method: 'GET', params })
+}
+
+// ===== 系统配置 =====
+export const getSystemConfigs = () => {
+  return request({ url: '/admin/config', method: 'GET' })
+}
+
+export const updateSystemConfig = (data) => {
+  return request({ url: '/admin/config', method: 'POST', data })
+}
+
+export const deleteSystemConfig = (configKey) => {
+  return request({ url: `/admin/config/${configKey}`, method: 'DELETE' })
+}
+
+// ===== 编号池管理 =====
+export const getAdminNumberPools = () => {
+  return request({ url: '/admin/number-pools', method: 'GET' })
+}
+
+export const createNumberPool = (data) => {
+  return request({ url: '/admin/number-pools', method: 'POST', data })
+}
+
+export const updateNumberPool = (poolId, data) => {
+  return request({ url: `/admin/number-pools/${poolId}`, method: 'PUT', data })
+}
+
+export const deleteNumberPool = (poolId) => {
+  return request({ url: `/admin/number-pools/${poolId}`, method: 'DELETE' })
+}

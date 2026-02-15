@@ -14,11 +14,22 @@ from app.models.document import Document, DocumentStatus, DocumentLock, LockType
 from app.models.proofreading import ProofreadingTask, ProofreadingStatus
 from app.models.approval import ApprovalFlow, ApprovalNode, ApprovalTask, ApprovalStatus
 from app.models.number import NumberPool, NumberRecord, NumberRecordStatus, RecyclePool
-from app.models.user import User
+from app.models.user import User, UserApprovalRole
 from app.services.audit_service import log_audit, AuditEvent
 from app.utils.logger import get_logger
 
 logger = get_logger("document_service")
+
+
+def _get_users_by_approval_role(db: Session, approval_role_id: uuid.UUID) -> List[uuid.UUID]:
+    """
+    根据审批角色 ID 查找拥有该角色的所有用户 ID
+    按 priority 排序（优先级高的在前）
+    """
+    user_roles = db.query(UserApprovalRole).filter(
+        UserApprovalRole.approval_role_id == approval_role_id
+    ).order_by(UserApprovalRole.priority.desc()).all()
+    return [ur.user_id for ur in user_roles]
 
 
 def check_document_editable(document: Document, field: str = "content"):
@@ -143,6 +154,7 @@ def submit_for_approval(
     """
     提交审批 — 需求书第四节
     前置条件：校对必须已完成
+    节点绑定审批角色 → 解析为具体用户 → 为每个用户创建 ApprovalTask
     """
     # 如果文档在校对中，检查校对是否完成
     if document.status == DocumentStatus.PROOFREADING:
@@ -188,15 +200,25 @@ def submit_for_approval(
             detail="审批流程没有配置节点"
         )
 
-    # 仅激活第一个节点的任务（串行）
+    # 仅激活第一个节点的任务（串行推进节点）
+    # 根据节点的 approval_role_id 解析出具体的用户
     first_node = nodes[0]
-    task = ApprovalTask(
-        document_id=document.id,
-        node_id=first_node.id,
-        approver_id=first_node.approval_role_id,
-        status=ApprovalStatus.PENDING
-    )
-    db.add(task)
+    approver_user_ids = _get_users_by_approval_role(db, first_node.approval_role_id)
+
+    if not approver_user_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"审批节点「{first_node.sequence}」对应的审批角色没有分配用户"
+        )
+
+    for user_id in approver_user_ids:
+        task = ApprovalTask(
+            document_id=document.id,
+            node_id=first_node.id,
+            approver_id=user_id,
+            status=ApprovalStatus.PENDING
+        )
+        db.add(task)
 
     # 全锁定
     all_lock = DocumentLock(

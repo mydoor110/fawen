@@ -1,14 +1,17 @@
 """
-管理员 API — 用户管理、角色分配
+管理员 API — 用户管理、角色分配、审计日志、系统配置、编号池管理
 统一使用 check_permission 权限检查
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import uuid
+from datetime import datetime
 
 from app.core.database import get_db
 from app.models.user import User, Role, UserRole, ApprovalRole, UserApprovalRole
+from app.models.system import AuditLog, SystemConfig
+from app.models.number import NumberPool
 from app.schemas.user import UserResponse, UserCreate, UserUpdate
 from app.auth.dependencies import get_current_user, check_permission
 from app.utils.logger import get_logger
@@ -280,3 +283,215 @@ def delete_approval_role(
     db.commit()
     logger.info(f"删除审批角色: {role.name}，操作人 {current_user.username}")
     return {"message": "审批角色删除成功"}
+
+
+# ============================================================
+#  审计日志查询
+# ============================================================
+@router.get("/audit-logs")
+def list_audit_logs(
+    skip: int = 0,
+    limit: int = 100,
+    action: Optional[str] = None,
+    user_id: Optional[uuid.UUID] = None,
+    resource_type: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取审计日志列表 — 仅系统管理员可查看"""
+    check_permission("audit.read", current_user, db)
+
+    query = db.query(AuditLog)
+    if action:
+        query = query.filter(AuditLog.action == action)
+    if user_id:
+        query = query.filter(AuditLog.user_id == user_id)
+    if resource_type:
+        query = query.filter(AuditLog.resource_type == resource_type)
+
+    total = query.count()
+    logs = query.order_by(AuditLog.created_at.desc()).offset(skip).limit(limit).all()
+
+    return {
+        "total": total,
+        "items": [
+            {
+                "id": str(log.id),
+                "user_id": str(log.user_id),
+                "action": log.action,
+                "resource_type": log.resource_type,
+                "resource_id": log.resource_id,
+                "details": log.details,
+                "ip_address": log.ip_address,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ]
+    }
+
+
+# ============================================================
+#  系统配置管理
+# ============================================================
+@router.get("/config")
+def get_system_configs(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取所有系统配置"""
+    check_permission("config.update", current_user, db)
+    configs = db.query(SystemConfig).all()
+    return [
+        {
+            "id": str(c.id),
+            "config_key": c.config_key,
+            "config_value": c.config_value,
+            "description": c.description,
+            "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+        }
+        for c in configs
+    ]
+
+
+@router.post("/config")
+def update_system_config(
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """更新系统配置项"""
+    check_permission("config.update", current_user, db)
+
+    config_key = data.get("config_key", "").strip()
+    config_value = data.get("config_value")
+    description = data.get("description", "")
+
+    if not config_key:
+        raise HTTPException(status_code=400, detail="配置键名不能为空")
+
+    existing = db.query(SystemConfig).filter(SystemConfig.config_key == config_key).first()
+    if existing:
+        existing.config_value = config_value
+        existing.description = description or existing.description
+        existing.updated_by = current_user.id
+    else:
+        config = SystemConfig(
+            config_key=config_key,
+            config_value=config_value,
+            description=description,
+            updated_by=current_user.id
+        )
+        db.add(config)
+
+    db.commit()
+    logger.info(f"系统配置 {config_key} 已更新，操作人 {current_user.username}")
+    return {"message": "配置更新成功", "config_key": config_key}
+
+
+@router.delete("/config/{config_key}")
+def delete_system_config(
+    config_key: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """删除系统配置项"""
+    check_permission("config.update", current_user, db)
+
+    config = db.query(SystemConfig).filter(SystemConfig.config_key == config_key).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="配置项不存在")
+    db.delete(config)
+    db.commit()
+    return {"message": "配置项已删除"}
+
+
+# ============================================================
+#  编号池管理
+# ============================================================
+@router.get("/number-pools")
+def list_number_pools(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取所有编号池"""
+    check_permission("number.read", current_user, db)
+    pools = db.query(NumberPool).order_by(NumberPool.year.desc()).all()
+    return [
+        {
+            "id": str(p.id),
+            "year": p.year,
+            "category": p.category,
+            "prefix": p.prefix,
+            "start_number": p.start_number,
+            "current_number": p.current_number,
+            "end_number": p.end_number,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+        }
+        for p in pools
+    ]
+
+
+@router.post("/number-pools")
+def create_number_pool(
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """创建编号池"""
+    check_permission("number.adjust", current_user, db)
+
+    pool = NumberPool(
+        year=data.get("year", datetime.now().year),
+        category=data.get("category", "default"),
+        prefix=data.get("prefix", "GW"),
+        start_number=data.get("start_number", 1),
+        current_number=data.get("current_number", 1),
+        end_number=data.get("end_number", 9999)
+    )
+    db.add(pool)
+    db.commit()
+    db.refresh(pool)
+    logger.info(f"创建编号池: {pool.prefix}-{pool.year}，操作人 {current_user.username}")
+    return {"message": "编号池创建成功", "id": str(pool.id)}
+
+
+@router.put("/number-pools/{pool_id}")
+def update_number_pool(
+    pool_id: uuid.UUID,
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """更新编号池"""
+    check_permission("number.adjust", current_user, db)
+
+    pool = db.query(NumberPool).filter(NumberPool.id == pool_id).first()
+    if not pool:
+        raise HTTPException(status_code=404, detail="编号池不存在")
+
+    for key in ["year", "category", "prefix", "start_number", "current_number", "end_number"]:
+        if key in data:
+            setattr(pool, key, data[key])
+
+    db.commit()
+    logger.info(f"更新编号池 {pool_id}，操作人 {current_user.username}")
+    return {"message": "编号池更新成功"}
+
+
+@router.delete("/number-pools/{pool_id}")
+def delete_number_pool(
+    pool_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """删除编号池"""
+    check_permission("number.force_adjust", current_user, db)
+
+    pool = db.query(NumberPool).filter(NumberPool.id == pool_id).first()
+    if not pool:
+        raise HTTPException(status_code=404, detail="编号池不存在")
+
+    db.delete(pool)
+    db.commit()
+    logger.info(f"删除编号池 {pool_id}，操作人 {current_user.username}")
+    return {"message": "编号池已删除"}
