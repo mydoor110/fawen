@@ -36,11 +36,17 @@ class ProofreadingSettings(BaseSettings):
     can_skip: bool
     require_comment: bool
 
+class TimeoutRemindersSettings(BaseSettings):
+    enabled: bool = True
+    remind_before_days: List[int] = Field(default_factory=lambda: [7, 3, 1])
+
 class ApprovalSettings(BaseSettings):
     allow_skip_proofreading: bool
     timeout_days: int
     notify_on_assign: bool
     allow_reassign: bool
+    timeout_strategy: str = "notify_only"  # auto_approve | auto_reject | escalate | notify_only
+    timeout_reminders: TimeoutRemindersSettings = Field(default_factory=TimeoutRemindersSettings)
 
 class DocumentSettings(BaseSettings):
     max_size_mb: int

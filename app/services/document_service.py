@@ -246,69 +246,111 @@ def allocate_official_number(db: Session, document: Document, allocated_by: User
     """
     分配正式文件号 — 需求书第五节
     仅在审批全部通过后自动调用
+    
+    【并发安全】使用PostgreSQL序列和行级锁,避免竞态条件
     """
     if document.official_number:
         return document.official_number
-
-    # 优先从回收池复用
-    recycle_record = db.query(RecyclePool).filter(
-        RecyclePool.is_available == True
-    ).first()
 
     recycle_first = True
     if hasattr(settings, 'number') and hasattr(settings.number, 'pool'):
         recycle_first = getattr(settings.number.pool, 'recycle_first', True)
 
-    if recycle_record and recycle_first:
-        official_number = recycle_record.official_number
-        recycle_record.is_available = False
+    # 优先从回收池复用(使用FOR UPDATE锁定)
+    if recycle_first:
+        recycle_record = db.query(RecyclePool).filter(
+            RecyclePool.is_available == True
+        ).with_for_update(skip_locked=True).first()  # 跳过已锁定的行
+        
+        if recycle_record:
+            official_number = recycle_record.official_number
+            recycle_record.is_available = False
 
-        number_record = NumberRecord(
-            document_id=document.id,
-            official_number=official_number,
-            status=NumberRecordStatus.ALLOCATED,
-            allocated_at=datetime.utcnow(),
-            allocated_by=allocated_by.id
-        )
-        db.add(number_record)
-    else:
-        current_year = datetime.now().year
-        pool = db.query(NumberPool).filter(
-            NumberPool.year == current_year
-        ).first()
-
-        if not pool:
-            prefix = "GW"
-            if hasattr(settings, 'number') and hasattr(settings.number, 'format'):
-                prefix = getattr(settings.number.format, 'prefix', 'GW')
-            pool = NumberPool(
-                year=current_year,
-                category="default",
-                prefix=prefix,
-                start_number=1,
-                current_number=1,
-                end_number=9999
+            number_record = NumberRecord(
+                document_id=document.id,
+                official_number=official_number,
+                status=NumberRecordStatus.ALLOCATED,
+                allocated_at=datetime.utcnow(),
+                allocated_by=allocated_by.id
             )
-            db.add(pool)
-            db.flush()
+            db.add(number_record)
+            
+            document.official_number = official_number
+            log_audit(db, allocated_by, AuditEvent.NUMBER_ALLOCATE,
+                      "Document", str(document.id),
+                      {"official_number": official_number, "from_recycle": True})
+            logger.info(f"文档 {document.id} 分配回收编号: {official_number}")
+            return official_number
+    
+    # 从编号池分配新编号
+    current_year = datetime.now().year
+    
+    # 使用 FOR UPDATE 锁定编号池行,防止并发冲突
+    pool = db.query(NumberPool).filter(
+        NumberPool.year == current_year
+    ).with_for_update().first()
 
-        official_number = f"{pool.prefix}-{pool.year}-{pool.current_number:04d}"
-
-        number_record = NumberRecord(
-            document_id=document.id,
-            official_number=official_number,
-            status=NumberRecordStatus.ALLOCATED,
-            allocated_at=datetime.utcnow(),
-            allocated_by=allocated_by.id
+    if not pool:
+        # 创建新编号池
+        prefix = "GW"
+        if hasattr(settings, 'number') and hasattr(settings.number, 'format'):
+            prefix = getattr(settings.number.format, 'prefix', 'GW')
+        
+        # 创建PostgreSQL序列
+        sequence_name = f"number_seq_{current_year}_default"
+        try:
+            from sqlalchemy import text
+            db.execute(text(f"CREATE SEQUENCE IF NOT EXISTS {sequence_name} START 1"))
+        except Exception as e:
+            logger.warning(f"创建序列失败(可能已存在): {e}")
+        
+        pool = NumberPool(
+            year=current_year,
+            category="default",
+            prefix=prefix,
+            start_number=1,
+            current_number=1,
+            end_number=9999,
+            sequence_name=sequence_name
         )
-        db.add(number_record)
+        db.add(pool)
+        db.flush()
+    
+    # 使用序列分配编号(并发安全)
+    if pool.sequence_name:
+        from sqlalchemy import text
+        result = db.execute(text(f"SELECT nextval('{pool.sequence_name}')"))
+        sequence_value = result.scalar()
+        
+        # 检查是否超出范围
+        if sequence_value > pool.end_number:
+            logger.error(f"编号池已耗尽: {sequence_value} > {pool.end_number}")
+            raise ValueError(f"编号池已耗尽,当前值 {sequence_value} 超过最大值 {pool.end_number}")
+    else:
+        # 兼容旧逻辑(不推荐,仍存在并发风险)
+        sequence_value = pool.current_number
         pool.current_number += 1
-
+        logger.warning(f"编号池 {pool.id} 未配置序列,使用兼容模式(存在并发风险)")
+    
+    # 格式化编号
+    official_number = f"{pool.prefix}-{pool.year}-{sequence_value:04d}"
+    
+    # 创建编号记录
+    number_record = NumberRecord(
+        document_id=document.id,
+        official_number=official_number,
+        status=NumberRecordStatus.ALLOCATED,
+        allocated_at=datetime.utcnow(),
+        allocated_by=allocated_by.id
+    )
+    db.add(number_record)
+    
+    # 更新文档
     document.official_number = official_number
 
     log_audit(db, allocated_by, AuditEvent.NUMBER_ALLOCATE,
               "Document", str(document.id),
-              {"official_number": official_number})
+              {"official_number": official_number, "sequence_value": sequence_value})
 
     logger.info(f"文档 {document.id} 分配正式文件号: {official_number}")
     return official_number

@@ -20,6 +20,9 @@ class AuditEvent:
     PROOFREAD_COMPLETE = "proofread.complete"  # 校对完成
     APPROVAL_APPROVE = "approval.approve"     # 审批通过
     APPROVAL_REJECT = "approval.reject"       # 审批驳回
+    APPROVAL_TIMEOUT_AUTO_APPROVED = "approval.timeout.auto_approved"  # 超时自动通过
+    APPROVAL_TIMEOUT_AUTO_REJECTED = "approval.timeout.auto_rejected"  # 超时自动驳回
+    APPROVAL_TIMEOUT_ESCALATED = "approval.timeout.escalated"          # 超时升级
     DOCUMENT_DESTROY = "document.destroy"     # 销毁操作
     DOCUMENT_SEAL = "document.seal"           # 文档盖章
     NUMBER_RECYCLE = "number.recycle"          # 编号回收

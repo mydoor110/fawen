@@ -18,8 +18,9 @@ class NumberPool(Base):
     category = Column(String(50), nullable=False)
     prefix = Column(String(10), nullable=False)
     start_number = Column(Integer, nullable=False)
-    current_number = Column(Integer, nullable=False)
+    current_number = Column(Integer, nullable=False)  # 保留用于回退兼容
     end_number = Column(Integer, nullable=False)
+    sequence_name = Column(String(100), nullable=True)  # PostgreSQL序列名
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class NumberRecord(Base):

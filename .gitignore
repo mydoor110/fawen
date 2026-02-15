@@ -30,6 +30,10 @@ htmlcov/
 .tox/
 *.db
 
+# Verification scripts (temporary)
+scripts/verify_*.py
+scripts/test_all_features.py
+
 # Environment & Config
 .env
 config.yaml

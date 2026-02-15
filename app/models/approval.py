@@ -52,3 +52,5 @@ class ApprovalTask(Base):
     comment = Column(Text)
     completed_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    deadline = Column(DateTime(timezone=True))  # 审批截止时间
+    timeout_notified = Column(Boolean, default=False)  # 是否已发送超时通知
