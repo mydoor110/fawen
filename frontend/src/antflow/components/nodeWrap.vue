@@ -190,7 +190,32 @@ watch(approverConfig1, (approver) => {
     console.log('[NodeWrap] approverConfig1 changed, flag:', approver.flag, 'approver.id:', approver.id, '_uid:', _uid, 'match:', approver.id === _uid)
     if (approver.flag && approver.id === _uid) {
         console.log('[NodeWrap] emitting update:nodeConfig with nodeApproveList:', JSON.stringify(approver.value?.nodeApproveList))
-        emits("update:nodeConfig", approver.value);
+        
+        // 特别处理并行审批节点 (nodeType==7)
+        if (props.nodeConfig.nodeType == 7 && approver.value.index !== undefined) {
+            // 并行审批节点，更新指定索引的parallelNodes
+            const index = approver.value.index;
+            if (props.nodeConfig.parallelNodes && props.nodeConfig.parallelNodes[index]) {
+                // 更新指定节点的数据
+                props.nodeConfig.parallelNodes[index].nodeApproveList = approver.value.nodeApproveList;
+                props.nodeConfig.parallelNodes[index].setType = approver.value.setType;
+                props.nodeConfig.parallelNodes[index].signType = approver.value.signType;
+                props.nodeConfig.parallelNodes[index].noHeaderAction = approver.value.noHeaderAction;
+                
+                // 重新计算显示名称
+                const displayName = $func.setApproverStr(props.nodeConfig.parallelNodes[index]);
+                props.nodeConfig.parallelNodes[index].nodeDisplayName = displayName;
+                props.nodeConfig.parallelNodes[index].error = !displayName;
+                
+                console.log('[NodeWrap] Updated parallelNodes[' + index + '] with displayName:', displayName);
+                
+                // 发出整个nodeConfig的更新
+                emits("update:nodeConfig", props.nodeConfig);
+            }
+        } else {
+            // 普通审批节点 (nodeType==4)
+            emits("update:nodeConfig", approver.value);
+        }
     }
 });
 watch(copyerConfig1, (copyer) => {
@@ -415,10 +440,15 @@ const setNodeInfo = (index) => {
         },
         7: () => {
             setApprover(true);
+            // 获取对应索引的并行节点数据
+            const parallelNode = props.nodeConfig.parallelNodes && props.nodeConfig.parallelNodes[index] 
+                ? props.nodeConfig.parallelNodes[index] 
+                : {};
             setApproverConfig({
                 value: {
-                    ...JSON.parse(JSON.stringify(props.nodeConfig)),
-                    index: index,
+                    ...JSON.parse(JSON.stringify(parallelNode)),
+                    index: index,  // 传递索引以便保存时能找到对应节点
+                    setType: parallelNode.setType ? parallelNode.setType : 1,
                 },
                 flag: false,
                 id: _uid,
