@@ -59,15 +59,19 @@ All.prototype = {
         arr.splice(includesIndex, 1);
     },
     setApproverStr(nodeConfig) {
+        if (!nodeConfig || !nodeConfig.nodeApproveList || !Array.isArray(nodeConfig.nodeApproveList)) {
+            if (nodeConfig && nodeConfig.setType == 5) return "发起人自己"
+            return ""
+        }
         if (nodeConfig.setType == 1) {
             if (nodeConfig.nodeApproveList.length == 1) {
                 return nodeConfig.nodeApproveList[0].name
             } else if (nodeConfig.nodeApproveList.length > 1) {
-                if (nodeConfig.signType == 1) {
-                    return this.arrToStr(nodeConfig.nodeApproveList)
-                } else if (nodeConfig.signType == 2) {
+                if (nodeConfig.signType == 2) {
                     return nodeConfig.nodeApproveList.length + "人(" + this.arrToStr(nodeConfig.nodeApproveList) + ")会签"
                 }
+                // signType == 1 或其他默认情况
+                return this.arrToStr(nodeConfig.nodeApproveList)
             }
         } else if (nodeConfig.setType == 3) {
             if (nodeConfig.nodeApproveList.length > 0) {
@@ -77,6 +81,7 @@ All.prototype = {
         } else if (nodeConfig.setType == 5) {
             return "发起人自己"
         }
+        return ""
     },
     dealStr(str, obj) {
         let arr = [];

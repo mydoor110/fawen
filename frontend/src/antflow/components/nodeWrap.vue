@@ -187,7 +187,9 @@ watch(flowPermission1, (flow) => {
     }
 });
 watch(approverConfig1, (approver) => {
+    console.log('[NodeWrap] approverConfig1 changed, flag:', approver.flag, 'approver.id:', approver.id, '_uid:', _uid, 'match:', approver.id === _uid)
     if (approver.flag && approver.id === _uid) {
+        console.log('[NodeWrap] emitting update:nodeConfig with nodeApproveList:', JSON.stringify(approver.value?.nodeApproveList))
         emits("update:nodeConfig", approver.value);
     }
 });
@@ -207,7 +209,11 @@ let defaultText = computed(() => {
 });
 let showText = computed(() => {
     if (props.nodeConfig.nodeType == 1) return $func.arrToStr(props.flowPermission) || '所有人';
-    if (props.nodeConfig.nodeType == 4) return $func.setApproverStr(props.nodeConfig);
+    if (props.nodeConfig.nodeType == 4) {
+        const result = $func.setApproverStr(props.nodeConfig);
+        console.log('[NodeWrap] showText computed for nodeType 4, setType:', props.nodeConfig.setType, 'nodeApproveList:', JSON.stringify(props.nodeConfig.nodeApproveList), 'result:', result)
+        return result;
+    }
     if (props.nodeConfig.nodeType == 6) return $func.copyerStr(props.nodeConfig);
 });
 

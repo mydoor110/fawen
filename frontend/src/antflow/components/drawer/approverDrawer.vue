@@ -146,7 +146,9 @@ const sureRoleApprover = (data) => {
     approverRoleVisible.value = false;
 }
 const saveApprover = () => {
+    console.log('[ApproverDrawer] saveApprover called, setType:', approverConfig.value.setType, 'nodeApproveList:', JSON.stringify(approverConfig.value.nodeApproveList))
     approverConfig.value.error = !$func.setApproverStr(approverConfig.value)
+    console.log('[ApproverDrawer] after setApproverStr, error:', approverConfig.value.error)
     setApproverConfig({
         value: approverConfig.value,
         flag: true,
