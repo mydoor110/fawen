@@ -21,6 +21,7 @@ class AuditEvent:
     APPROVAL_APPROVE = "approval.approve"     # 审批通过
     APPROVAL_REJECT = "approval.reject"       # 审批驳回
     DOCUMENT_DESTROY = "document.destroy"     # 销毁操作
+    DOCUMENT_SEAL = "document.seal"           # 文档盖章
     NUMBER_RECYCLE = "number.recycle"          # 编号回收
     NUMBER_ALLOCATE = "number.allocate"       # 编号分配
     PERMISSION_DENIED = "permission.denied"   # 越权操作被拒绝

@@ -56,6 +56,9 @@ export const getFlowNodes = (flowId) => {
   return request({ url: `/approval/flows/${flowId}/nodes`, method: 'GET' })
 }
 
+// 别名导出（供其他组件使用）
+export const listFlowNodes = getFlowNodes
+
 export const createFlowNode = (flowId, data) => {
   return request({ url: `/approval/flows/${flowId}/nodes`, method: 'POST', data })
 }
@@ -67,4 +70,3 @@ export const updateFlowNode = (flowId, nodeId, data) => {
 export const deleteFlowNode = (flowId, nodeId) => {
   return request({ url: `/approval/flows/${flowId}/nodes/${nodeId}`, method: 'DELETE' })
 }
-

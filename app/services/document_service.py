@@ -231,6 +231,7 @@ def submit_for_approval(
 
     document.is_locked = True
     document.status = DocumentStatus.APPROVAL
+    document.approval_flow_id = flow_id  # 记录使用的审批流程
     document.submitted_at = datetime.utcnow()
 
     log_audit(db, current_user, AuditEvent.NUMBER_LOCK,

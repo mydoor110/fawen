@@ -27,6 +27,7 @@ class Document(Base):
         default=DocumentStatus.DRAFT, index=True
     )
     creator_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    approval_flow_id = Column(UUID(as_uuid=True), index=True)  # 记录使用的审批流程
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     submitted_at = Column(DateTime(timezone=True))

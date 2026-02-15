@@ -163,6 +163,106 @@ def reject_task(
     return {"message": "审批已驳回，文档退回修改"}
 
 
+@router.post("/tasks/batch-approve")
+def batch_approve_tasks(
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    批量审批通过
+    data: {
+        "task_ids": ["uuid1", "uuid2", ...],
+        "comment": "统一审批意见"
+    }
+    """
+    task_ids = data.get("task_ids", [])
+    comment = data.get("comment", "")
+    
+    if not task_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请选择要审批的任务"
+        )
+    
+    results = []
+    success_count = 0
+    fail_count = 0
+    
+    for task_id_str in task_ids:
+        try:
+            task_id = uuid.UUID(task_id_str)
+            task = db.query(ApprovalTask).filter(ApprovalTask.id == task_id).first()
+            
+            if not task:
+                results.append({"task_id": task_id_str, "status": "error", "message": "任务不存在"})
+                fail_count += 1
+                continue
+            
+            if task.approver_id != current_user.id:
+                results.append({"task_id": task_id_str, "status": "error", "message": "该任务未分配给您"})
+                fail_count += 1
+                continue
+            
+            if task.status != ApprovalStatus.PENDING:
+                results.append({"task_id": task_id_str, "status": "error", "message": "该任务已处理"})
+                fail_count += 1
+                continue
+            
+            # 更新任务状态
+            task.status = ApprovalStatus.APPROVED
+            task.comment = comment
+            task.completed_at = datetime.utcnow()
+            
+            # 审计
+            log_audit(db, current_user, AuditEvent.APPROVAL_APPROVE,
+                      "ApprovalTask", str(task_id),
+                      {"document_id": str(task.document_id), "comment": comment, "batch": True})
+            
+            # 检查是否需要推进节点
+            node = db.query(ApprovalNode).filter(ApprovalNode.id == task.node_id).first()
+            
+            if node.node_type == NodeApprovalType.AND:
+                all_node_tasks = db.query(ApprovalTask).filter(
+                    ApprovalTask.node_id == node.id,
+                    ApprovalTask.document_id == task.document_id
+                ).all()
+                all_approved = all(t.status == ApprovalStatus.APPROVED for t in all_node_tasks)
+                
+                if all_approved:
+                    _advance_to_next_node(db, node, task.document_id, current_user)
+            else:
+                # OR模式
+                other_tasks = db.query(ApprovalTask).filter(
+                    ApprovalTask.node_id == node.id,
+                    ApprovalTask.document_id == task.document_id,
+                    ApprovalTask.id != task_id
+                ).all()
+                for t in other_tasks:
+                    if t.status == ApprovalStatus.PENDING:
+                        t.status = ApprovalStatus.SKIPPED
+                        t.completed_at = datetime.utcnow()
+                
+                _advance_to_next_node(db, node, task.document_id, current_user)
+            
+            results.append({"task_id": task_id_str, "status": "success", "message": "审批通过"})
+            success_count += 1
+            
+        except Exception as e:
+            logger.error(f"批量审批任务 {task_id_str} 失败: {str(e)}")
+            results.append({"task_id": task_id_str, "status": "error", "message": str(e)})
+            fail_count += 1
+    
+    db.commit()
+    
+    return {
+        "message": f"批量审批完成，成功 {success_count} 个，失败 {fail_count} 个",
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "results": results
+    }
+
+
 # ============================================================
 #  审批流程管理
 # ============================================================
@@ -213,6 +313,61 @@ def update_approval_flow(
         flow.flow_data = data["flow_data"]
     db.commit()
     db.refresh(flow)
+    return flow
+
+
+# ============================================================
+#  AntFlow数据桥接接口
+# ============================================================
+@router.post("/flows/from-antflow", response_model=ApprovalFlowResponse)
+def create_flow_from_antflow(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    从AntFlow可视化设计器数据创建审批流程
+    自动解析nodeConfig并创建ApprovalNode
+    """
+    check_permission("approval.create_flow", current_user, db)
+    
+    from app.services.antflow_parser import AntFlowParser
+    
+    flow, error_msg = AntFlowParser.parse_and_create_flow(db, data, current_user.id)
+    
+    if not flow:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg or "创建流程失败"
+        )
+    
+    return flow
+
+
+@router.put("/flows/{flow_id}/from-antflow", response_model=ApprovalFlowResponse)
+def update_flow_from_antflow(
+    flow_id: uuid.UUID,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    从AntFlow可视化设计器数据更新审批流程
+    会删除旧节点并重新创建
+    """
+    check_permission("approval.create_flow", current_user, db)
+    
+    from app.services.antflow_parser import AntFlowParser
+    
+    success, msg = AntFlowParser.update_flow_from_antflow(db, flow_id, data)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=msg
+        )
+    
+    flow = db.query(ApprovalFlow).filter(ApprovalFlow.id == flow_id).first()
     return flow
 
 
@@ -372,6 +527,17 @@ def _advance_to_next_node(db: Session, current_node: ApprovalNode, document_id: 
 
         # 自动分配正式文件号（需求书第五节）
         allocate_official_number(db, document, user)
+        
+        # 🔥 新增：自动盖章（需求书用户需求）
+        try:
+            from app.services.seal_service import seal_document
+            success, msg = seal_document(db, document, user)
+            if success:
+                logger.info(f"文档 {document_id} 自动盖章成功")
+            else:
+                logger.warning(f"文档 {document_id} 自动盖章失败: {msg}")
+        except Exception as e:
+            logger.error(f"文档 {document_id} 自动盖章异常: {str(e)}", exc_info=True)
 
         # 解锁
         unlock_document(db, document, user, "审批全部通过，自动解锁")

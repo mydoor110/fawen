@@ -63,12 +63,20 @@ def adjust_number(
     手动调整编号 — 需求书 2.2
     必须填写原因、写入审计日志
     审批中默认禁止调整，由配置 allow_edit_during_approval 控制
+    文件管理员可以调整已分配的编号（需要 number.force_adjust 权限）
     """
     check_permission("number.adjust", current_user, db)
 
     record = db.query(NumberRecord).filter(NumberRecord.id == record_id).first()
     if not record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="编号记录不存在")
+
+    # 校验调整原因
+    if not request.reason or len(request.reason.strip()) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="调整原因不能为空"
+        )
 
     # 检查对应文档是否在审批中
     if record.document_id:
@@ -85,21 +93,55 @@ def adjust_number(
                     detail="文件在审批流中，编号字段已锁定。如需修改请联系系统管理员"
                 )
 
+    # 🔧 新增：允许文件管理员调整已分配的编号
     if record.status == NumberRecordStatus.ALLOCATED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="已分配的编号不可直接调整"
-        )
+        # 检查是否有强制调整权限（文件管理员专属）
+        if not has_permission("number.force_adjust", current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="仅文件管理员可调整已分配的编号"
+            )
+        
+        # 对已分配编号的调整要求更详细的原因说明
+        if len(request.reason.strip()) < 10:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="调整已分配编号需要详细说明原因（至少10个字符）"
+            )
 
-    if not request.reason or len(request.reason.strip()) == 0:
+    # 🔧 新增：文件号合规性校验
+    from app.utils.number_validator import validate_number
+    
+    # 获取配置的允许前缀列表（如果有）
+    allowed_prefixes = None
+    if hasattr(settings, 'number') and hasattr(settings.number, 'format'):
+        prefix = getattr(settings.number.format, 'prefix', None)
+        if prefix:
+            allowed_prefixes = [prefix]  # 也可以配置为列表
+    
+    # 执行校验（排除当前文档，允许保持原编号）
+    is_valid, error_msg = validate_number(
+        request.new_number, 
+        db, 
+        allowed_prefixes,
+        exclude_document_id=str(record.document_id) if record.document_id else None
+    )
+    
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="调整原因不能为空"
+            detail=error_msg
         )
 
     old_number = record.official_number
     record.official_number = request.new_number
     record.manual_adjustment = True
+
+    # 如果文档已有编号，同步更新文档的编号字段
+    if record.document_id:
+        document = db.query(Document).filter(Document.id == record.document_id).first()
+        if document:
+            document.official_number = request.new_number
 
     # 审计 — 编号手动修改（强制记录）
     log_audit(db, current_user, AuditEvent.NUMBER_ADJUST,
@@ -107,12 +149,13 @@ def adjust_number(
               {
                   "old_number": old_number,
                   "new_number": request.new_number,
-                  "reason": request.reason
+                  "reason": request.reason,
+                  "status": record.status.value
               })
 
     db.commit()
-    logger.info(f"编号 {old_number} → {request.new_number}，操作人: {current_user.username}")
-    return {"message": "编号调整成功"}
+    logger.info(f"编号 {old_number} → {request.new_number}，操作人: {current_user.username}，原因: {request.reason}")
+    return {"message": "编号调整成功", "old_number": old_number, "new_number": request.new_number}
 
 
 @router.get("/recycle-pool", response_model=List[RecyclePoolResponse])

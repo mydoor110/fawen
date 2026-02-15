@@ -495,3 +495,60 @@ def delete_number_pool(
     db.commit()
     logger.info(f"删除编号池 {pool_id}，操作人 {current_user.username}")
     return {"message": "编号池已删除"}
+
+
+# ============================================================
+#  电子印章管理
+# ============================================================
+from fastapi import UploadFile, File
+import os
+import shutil
+from pathlib import Path
+
+
+@router.post("/upload-seal")
+async def upload_seal(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    上传电子印章图片
+    仅管理员可操作
+    """
+    check_permission("system.config", current_user, db)
+    
+    # 验证文件类型
+    if file.content_type not in ["image/png", "image/jpeg"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="只允许上传 PNG 或 JPG 格式的图片"
+        )
+    
+    # 创建存储目录
+    storage_dir = Path("storage/seals")
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 生成文件名（使用时间戳避免重复）
+    file_extension = Path(file.filename).suffix
+    filename = f"seal_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}{file_extension}"
+    file_path = storage_dir / filename
+    
+    # 保存文件
+    try:
+        with file_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        logger.info(f"上传印章图片: {filename}，操作人: {current_user.username}")
+        
+        return {
+            "message": "印章图片上传成功",
+            "file_path": str(file_path),
+            "filename": filename
+        }
+    except Exception as e:
+        logger.error(f"保存印章图片失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"保存文件失败: {str(e)}"
+        )

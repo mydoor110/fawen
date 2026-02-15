@@ -2,6 +2,7 @@
  * AntFlow API 适配层
  * 将 AntFlow 的 API 调用桥接到公文文件号管理系统后端
  */
+import request from '@/utils/request'
 import { getApprovalRoles } from '@/api/user'
 import { getUsers } from '@/api/user'
 
@@ -74,8 +75,23 @@ export const getConditions = async () => {
     }
 }
 
-// AntFlow 需要的 setWorkFlowData 接口 → 保存流程数据
+// AntFlow 需要的 setWorkFlowData 接口 → 保存流程数据到后端
 export const setWorkFlowData = async (data) => {
     console.log('AntFlow workflow data:', JSON.stringify(data))
-    return { code: 200 }
+
+    // 调用后端API保存流程
+    try {
+        const response = await request({
+            url: '/approval/flows/from-antflow',
+            method: 'POST',
+            data
+        })
+
+        console.log('流程保存成功:', response)
+        return { code: 200, data: response }
+    } catch (error) {
+        console.error('流程保存失败:', error)
+        return { code: 500, message: error.message || '保存失败' }
+    }
 }
+
