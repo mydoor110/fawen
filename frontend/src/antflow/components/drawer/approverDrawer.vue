@@ -25,31 +25,8 @@
                                 @click="approverConfig.nodeApproveList = []">清除</a>
                         </p>
                     </div>
-                    <div class="approver_select" v-if="approverConfig.setType == 2">
-                        <p>
-                            <span>发起人的：</span>
-                            <select v-model="approverConfig.directorLevel" style="width: 250px;">
-                                <option v-for="item in directorMaxLevel" :value="item" :key="item">
-                                    {{ item == 1 ? '直接' : '第' + item + '级' }}主管</option>
-                            </select>
-                        </p>
-                        <p class="tip">找不到主管时，由上级主管代审批</p>
-                    </div>
                     <div class="approver_btn" v-show="approverConfig.setType == 3">
-
-                        <el-button type="primary" @click="addRoleApprover">添加/修改角色</el-button>
-                        <p class="selected_list">
-                            <span v-for="(item, index) in approverConfig.nodeApproveList" :key="index">{{ item.name
-                                }}
-                                <img src="@/antflow/assets/images/add-close1.png"
-                                    @click="$func.removeEle(approverConfig.nodeApproveList, item, 'targetId')">
-                            </span>
-                            <a v-if="approverConfig.nodeApproveList.length != 0"
-                                @click="approverConfig.nodeApproveList = []">清除</a>
-                        </p>
-                    </div>
-                    <div class="approver_btn" v-show="approverConfig.setType == 4"> 
-                        <el-button type="primary" @click="addRoleApprover">添加/修改部门</el-button>
+                        <el-button type="primary" @click="addRoleApprover">添加/修改审批角色</el-button>
                         <p class="selected_list">
                             <span v-for="(item, index) in approverConfig.nodeApproveList" :key="index">{{ item.name
                                 }}
@@ -61,11 +38,8 @@
                         </p>
                     </div>
                     <div class="approver_text" v-if="approverConfig.setType == 5">
-                        <p>该审批节点设置“发起人自己”后，审批人默认为发起人</p>
+                        <p>该审批节点设置"发起人自己"后，审批人默认为发起人</p>
                     </div>
-                    <div class="approver_text" v-if="approverConfig.setType == 6">  
-                        <span>直到发起人的第  <el-input-number v-model="approverConfig.directorLevel" :min="1"/> 级主管</span> 
-                    </div> 
                 </div>
                 <div class="approver_block">
                     <p>✍多人审批时采用的审批方式</p>
@@ -154,11 +128,6 @@ const changeType = (val) => {
     approverConfig.value.nodeApproveList = [];
     approverConfig.value.signType = 1;
     approverConfig.value.noHeaderAction = 2;
-    if (val == 2) {
-        approverConfig.value.directorLevel = 1;
-    } else {
-
-    }
 }
 const addApprover = () => {
     approverVisible.value = true;
@@ -220,7 +189,7 @@ const closeDrawer = () => {
 .approver_content {
     padding: 20px 20px 0; 
     border-bottom: 1px solid #f2f2f2;
-    min-height: 260px;
+    min-height: 200px;
     overflow: hidden;
     margin-bottom: 20px;
     border: 1px solid var(--el-border-color);
@@ -251,36 +220,17 @@ const closeDrawer = () => {
         display: unset;
     } 
     .el-radio {
-        width: 25%;
+        width: 45%;
         margin-bottom: 20px;
         height: 16px;
     }
-}
-
-.approver_select p {
-    line-height: 32px;
-}
-
-.approver_select select {
-    width: 250px;
-    height: 32px;
-    background: rgba(255, 255, 255, 1);
-    border-radius: 4px;
-    border: 1px solid rgba(217, 217, 217, 1);
-}
-
-.approver_select p.tip {
-    margin: 10px 0 22px 0;
-    font-size: 12px;
-    line-height: 16px;
-    color: #f8642d;
 }
 
 .approver_text {
     padding: 10px 0px;
     color: #f8642d;
 } 
-.approver_select p:first-of-type,
+
 .approver_block p {
     line-height: 19px;
     font-size: 15px;

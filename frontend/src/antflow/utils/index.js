@@ -1,14 +1,14 @@
-function All() {}
+function All() { }
 All.prototype = {
     timer: "",
     debounce(fn, delay = 500) {
         var _this = this;
-        return function(arg) {
+        return function (arg) {
             //获取函数的作用域和变量
             let that = this;
             let args = arg;
             clearTimeout(_this.timer) // 清除定时器
-            _this.timer = setTimeout(function() {
+            _this.timer = setTimeout(function () {
                 fn.call(that, args)
             }, delay)
         }
@@ -69,46 +69,35 @@ All.prototype = {
                     return nodeConfig.nodeApproveList.length + "人(" + this.arrToStr(nodeConfig.nodeApproveList) + ")会签"
                 }
             }
-        } else if (nodeConfig.setType == 2) {
-            let level = nodeConfig.directorLevel == 1 ? '直接主管' : '第' + nodeConfig.directorLevel + '级主管'
-            if (nodeConfig.signType == 1) {
-                return level
-            } else if (nodeConfig.signType == 2) {
-                return level + "会签"
-            }
-        }else if (nodeConfig.setType == 3) {
+        } else if (nodeConfig.setType == 3) {
             if (nodeConfig.nodeApproveList.length > 0) {
-                return  "指定 (" + this.arrToStr(nodeConfig.nodeApproveList) + ") 角色"
+                return "审批角色: " + this.arrToStr(nodeConfig.nodeApproveList)
             }
             return ""
-        } else if (nodeConfig.setType == 4) {
-            return "指定部门"
         } else if (nodeConfig.setType == 5) {
             return "发起人自己"
-        } else if (nodeConfig.setType == 6) {
-            return "层层审批：直到发起人的第"+ nodeConfig.directorLevel +"级主管"
-        }  
+        }
     },
     dealStr(str, obj) {
         let arr = [];
         let list = str.split(",");
         for (var elem in obj) {
             list.map(item => {
-                if ((item -1) == elem) {
+                if ((item - 1) == elem) {
                     arr.push(obj[elem].value)
                 }
             })
         }
         return arr.join("或")
-    },  
-    getLabelStr(index, obj) {  
-        if(!obj) return; 
-        let ret = obj[index -1];
+    },
+    getLabelStr(index, obj) {
+        if (!obj) return;
+        let ret = obj[index - 1];
         if (ret) {
             return ret.value;
         }
         return '';
-    },  
+    },
     conditionStr(nodeConfig, index) {
         var { conditionList, nodeApproveList } = nodeConfig.conditionNodes[index];
         if (conditionList.length == 0) {
@@ -131,11 +120,11 @@ All.prototype = {
                 else if (columnType == "String" && showType == "2") {
                     if (!fixedDownBoxValue) {
                         str += nodeConfig.conditionNodes[index].nodeDisplayName + "     "
-                    }else {
+                    } else {
                         if (zdy1) {
                             str += showName + '：' + this.getLabelStr(zdy1, JSON.parse(fixedDownBoxValue)) + " 并且 "
                         }
-                    }                  
+                    }
                 }
                 else if (columnType == "Double" && showType == "2") {
                     if (zdy1) {
@@ -165,7 +154,7 @@ All.prototype = {
                 return "发起人自选"
             }
         }
-    }, 
+    },
     toggleStrClass(item, key) {
         let a = item.zdy1 ? item.zdy1.split(",") : []
         return a.some(item => { return item == key });
